@@ -24,7 +24,7 @@ from time import sleep
 # the left wheel is connected to port A
 # the right wheel is connected to port B
 # the wheel diameter is 5.5 cm (default lego wheel diameter)
-pos_info = Odometrium(left='A', right='B', wheel_diameter='5.5')
+pos_info = Odometrium(left='A', right='B', wheel_diameter=5.5)
 
 # drive for 3 seconds with both wheels at the speed of 50 deg/second
 # when time is used, the command is by default blocking:
