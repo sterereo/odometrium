@@ -27,7 +27,16 @@ from time import sleep
 pos_info = Odometrium(left='A', right='B', wheel_diameter='5.5')
 
 # drive for 3 seconds with both wheels at the speed of 50 deg/second
+# when time is used, the command is by default blocking:
 pos_info.move(left=50, right=50, time=3)
+print('Done moving.')
+
+# the command can be made non-blocking by using the parameter:
+pos_info.move(left=50, right=50, time=3, blocking=False)
+print('Movement started...')
+# now wait until the motors stopped
+pos_info.wait()
+print('Movement stopped.')
 
 # start driving with the left wheel at 50 deg/s and the right wheel at 80 deg/s
 pos_info.move(left=50, right=80)
