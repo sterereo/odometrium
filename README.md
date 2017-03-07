@@ -45,6 +45,10 @@ sleep(3)
 # ... and stop both motors
 pos_info.stop()
 
+# also available as blocking, but quite useless then
+# and your motors don't stop spinning!
+pos_info.move(left=50, right=80, blocking=True)
+
 
 # increase speed of the left wheel by 10 deg/s
 # and decrease the speed of the right wheel by 20 deg/s
@@ -53,9 +57,8 @@ pos_info.change_speed(left=10, right=-20)
 # decrease speed of the left wheel by 5 deg/s
 pos_info.change_speed(left=-5)
 
-# speed of the left & right wheel
-pos_info.speed_left
-pos_info.speed_right
+# make the left wheel 10 faster than the right wheel
+pos_info.speed_left = pos_info.speed_right + 10
 
 # returns the current position as tuple
 x, y = pos_info.get_current_pos()

@@ -45,3 +45,23 @@ class Odometrium:
             # => only block when blocking=True is given
             if blocking:
                 self.wait()
+
+    def change_speed(self, left=0, right=0):
+        self.__motor_left.run_forever(speed_sp=self.speed_left + left)
+        self.__motor_right.run_forever(speed_sp=self.speed_right + right)
+
+    @property
+    def speed_left(self):
+        return self.__motor_left.speed
+
+    @speed_left.setter
+    def speed_left(self, new_speed):
+        self.change_speed(left=new_speed)
+
+    @property
+    def speed_right(self):
+        return self.__motor_right.speed
+
+    @speed_right.setter
+    def speed_right(self, new_speed):
+        self.change_speed(right=new_speed)
