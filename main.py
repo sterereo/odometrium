@@ -91,7 +91,7 @@ class Odometrium:
     def __del__(self):
         for single_log in self.__movement_logs:
             log_line = ''
-            log_line += 'Left:  ' + single_log['speed_left'] + '; '
-            log_line += 'Right: ' + single_log['speed_right'] + '; '
-            log_line += 'Time:  ' + single_log['time']
+            log_line += 'Left:  ' + str(single_log['speed_left']) + '; '
+            log_line += 'Right: ' + str(single_log['speed_right']) + '; '
+            log_line += 'Time:  ' + str(single_log['time'])
             print(log_line)
