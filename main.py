@@ -1,5 +1,5 @@
 import ev3dev.ev3 as ev3
-import time.perf_counter
+from time import perf_counter
 
 
 class Odometrium:
@@ -19,12 +19,12 @@ class Odometrium:
         self.__motor_left = ev3.LargeMotor('out' + left)
         self.__motor_right = ev3.LargeMotor('out' + right)
         self.__movement_logs = []
-        self.__last_log_time = time.perf_counter()
+        self.__last_log_time = perf_counter()
         self.stop()
 
     def __add_log(self):
         # generate current log
-        current_time = time.perf_counter()
+        current_time = perf_counter()
         elapsed_time = current_time - self.__last_log_time
         new_log = {
             'speed_left': self.speed_left,
@@ -34,8 +34,9 @@ class Odometrium:
         # only record log if there is movement at all
         if 0 != self.speed_left or 0 != self.speed_right:
             self.__movement_logs.append(new_log)
+            print(self.__get_log_str(new_log))
         # set reference point for the next log
-        self.__last_log_time = time.perf_counter()
+        self.__last_log_time = perf_counter()
 
     def stop(self):
         self.__add_log()
@@ -85,13 +86,16 @@ class Odometrium:
     def speed_right(self, new_speed):
         self.change_speed(right=new_speed)
 
+    def __get_log_str(self, log):
+        log_line = ''
+        log_line += 'Left:  ' + str(log['speed_left']) + '; '
+        log_line += 'Right: ' + str(log['speed_right']) + '; '
+        log_line += 'Time:  ' + str(log['time'])
+        return log_line
+
     def __exit__(self):
         self.stop()
 
     def __del__(self):
         for single_log in self.__movement_logs:
-            log_line = ''
-            log_line += 'Left:  ' + str(single_log['speed_left']) + '; '
-            log_line += 'Right: ' + str(single_log['speed_right']) + '; '
-            log_line += 'Time:  ' + str(single_log['time'])
-            print(log_line)
+            print(self.__get_log_str(single_log))
