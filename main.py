@@ -1,9 +1,54 @@
 import ev3dev.ev3 as ev3
-from time import perf_counter
+from math import pi, sin, cos, sqrt
+from random import randint
+
+
+def get_position_delta(distance_left, distance_right, previous_angle, wheel_distance):
+    # takes the distance driven by the left and right wheel (and their distance)
+    # and a starting angle, calculates new position and orientation
+
+    # bunch of maths, look at the readme if you care
+
+    # straight movement or curve?
+    if distance_right == distance_left:
+        # straight movement
+        delta_angle = 0
+        delta_distance = abs(distance_left)
+        delta_x = distance_left * cos(previous_angle)
+        delta_y = distance_left * sin(previous_angle)
+    else:
+        # curve movement
+
+        distance_difference = distance_left - distance_right
+        radius_left = (distance_left * wheel_distance) / distance_difference
+        radius_right = (distance_right * wheel_distance) / distance_difference
+
+        try:
+            angle = distance_left / radius_left
+        except ZeroDivisionError:
+            angle = distance_right / radius_right
+
+        radius = (radius_left + radius_right) / 2
+        delta_angle = angle
+        euclidean_distance = sqrt(2 * radius * radius * (1 - cos(angle)))
+        # as defined by readme
+        angle_lambda = ((pi - angle) / 2) - previous_angle
+        delta_x = euclidean_distance * cos(angle_lambda)
+        delta_y = euclidean_distance * sin(angle_lambda)
+        delta_distance = abs(radius * angle)
+
+    # build return data
+    delta_dict = {
+        'delta_angle': delta_angle,
+        'delta_distance': delta_distance,
+        'delta_x': delta_x,
+        'delta_y': delta_y,
+    }
+    return delta_dict
 
 
 class Odometrium:
-    def __init__(self, left=None, right=None, wheel_diameter=5.5, wheel_distance=12):
+    def __init__(self, left=None, right=None, wheel_diameter=5.5, wheel_distance=12, count_per_rot_left=None, count_per_rot_right=None, debug=False):
         allowed_ports = ['A', 'B', 'C', 'D']
         if left not in allowed_ports or right not in allowed_ports:
             if left not in allowed_ports:
@@ -15,28 +60,151 @@ class Odometrium:
             raise RuntimeError('The ' + error_location + ' motor port given is none of the allowed ports: ' + ', '.join(allowed_ports))
 
         self.__wheel_diameter = wheel_diameter
+        self.__wheel_distance = wheel_distance
+
+        self.__debug = debug
+
         # init motor wheel
         self.__motor_left = ev3.LargeMotor('out' + left)
         self.__motor_right = ev3.LargeMotor('out' + right)
+
+        if count_per_rot_left is None:
+            self.__count_per_rot_left = self.__motor_left.count_per_rot
+        else:
+            self.__count_per_rot_left = count_per_rot_left
+
+        if count_per_rot_right is None:
+            self.__count_per_rot_right = self.__motor_right.count_per_rot
+        else:
+            self.__count_per_rot_right = count_per_rot_right
+
+        # init logs
         self.__movement_logs = []
-        self.__last_log_time = perf_counter()
+        self.__save_current_pos()
         self.stop()
 
-    def __add_log(self):
-        # generate current log
-        current_time = perf_counter()
-        elapsed_time = current_time - self.__last_log_time
-        new_log = {
-            'speed_left': self.speed_left,
-            'speed_right': self.speed_right,
-            'time': elapsed_time,
+        # init position cache
+        self.__pos_cache = {}
+
+    def __save_current_pos(self):
+        self.__last_pos = {
+            'left': self.__motor_left.position,
+            'right': self.__motor_right.position
         }
-        # only record log if there is movement at all
-        if 0 != self.speed_left or 0 != self.speed_right:
-            self.__movement_logs.append(new_log)
-            print(self.__get_log_str(new_log))
-        # set reference point for the next log
-        self.__last_log_time = perf_counter()
+
+    def __add_log(self):
+        # get difference since last measurement
+        new_log = {
+            'delta_position_left': self.__motor_left.position - self.__last_pos['left'],
+            'delta_position_right': self.__motor_right.position - self.__last_pos['right'],
+        }
+        self.__movement_logs.append(new_log)
+        self.__save_current_pos()
+
+    def __get_deltas(self, log_dict, previous_angle):
+        # takes a log dictionary and calculates the differences to the new position and orientation
+        # just calculates the driven distance and passes on to function
+        wheel_diameter = self.__wheel_diameter
+        wheel_distance = self.__wheel_distance
+        count_per_rot_left = self.__count_per_rot_left
+        count_per_rot_right = self.__count_per_rot_right
+
+        circumference = wheel_diameter * pi
+
+        tacho_counts_left = log_dict['delta_position_left']
+        tacho_counts_right = log_dict['delta_position_right']
+        rotations_left = tacho_counts_left / count_per_rot_left
+        rotations_right = tacho_counts_right / count_per_rot_right
+        distance_left = rotations_left * circumference
+        distance_right = rotations_right * circumference
+
+        return get_position_delta(
+            distance_left=distance_left,
+            distance_right=distance_right,
+            previous_angle=previous_angle,
+            wheel_distance=wheel_distance
+        )
+
+    def __print_current_pos(self):
+        # prints the current position
+        if self.__debug:
+            current_pos = self.__current_pos()
+            print('currently at x=' + str(current_pos['x']) + ', y=' + str(current_pos['y']) + ', angle=' + str(current_pos['angle']) +
+                  ' (' + str((current_pos['angle'] / pi) * 180) + ' degrees), total distance=' + str(current_pos['distance']))
+
+    def __current_pos(self):
+        self.__add_log()
+        current_x = 0
+        current_y = 0
+        current_angle = 0
+        current_distance = 0
+
+        for single_log_dict in self.__movement_logs:
+
+            key = self.__movement_logs.index(single_log_dict)
+            # is position already cached?
+            if key in self.__pos_cache:
+                # load from cache
+                deltas = self.__pos_cache[key]
+            else:
+                # calculate position
+                deltas = self.__get_deltas(single_log_dict, current_angle)
+                # put to cache
+                self.__pos_cache[key] = deltas
+
+            current_x += deltas['delta_x']
+            current_y += deltas['delta_y']
+            current_angle += deltas['delta_angle']
+            current_angle = current_angle % (2 * pi)
+            current_distance += deltas['delta_distance']
+
+        return_dict = {
+            'x': current_x,
+            'y': current_y,
+            'angle': current_angle,
+            'distance': current_distance,
+        }
+
+        return return_dict
+
+    def get_current_pos(self):
+        current_pos = self.__current_pos()
+        return current_pos['x'], current_pos['y']
+
+    @property
+    def x(self):
+        return self.__current_pos()['x']
+
+    @x.setter
+    def x(self, newx):
+        self.__add_log()
+        self.__set_position(delta_x=newx - self.x)
+
+    @property
+    def y(self):
+        return self.__current_pos()['y']
+
+    @y.setter
+    def y(self, newy):
+        self.__add_log()
+        self.__set_position(delta_y=newy - self.y)
+
+    @property
+    def orientation(self):
+        return self.__current_pos()['angle']
+
+    @orientation.setter
+    def orientation(self, new_orientation):
+        self.__set_position(delta_angle=new_orientation - self.orientation)
+
+    @property
+    def distance(self):
+        return self.__current_pos()['distance']
+
+    @distance.setter
+    def distance(self, new_distance):
+        self.__add_log()
+        self.__set_position(delta_distance=new_distance - self.distance)
 
     def stop(self):
         self.__add_log()
@@ -47,28 +215,57 @@ class Odometrium:
         self.__motor_left.wait_while('running')
         self.__motor_right.wait_while('running')
 
-    def move(self, right=0, left=0, time=None, blocking=None):
-        self.stop()
+    def move(self, right=None, left=None, time=None, blocking=None):
+        # add a waypoint (log of movement)
+        self.__add_log()
+        # debugging
+        self.__print_current_pos()
+
         if time is not None:
-            self.__motor_left.run_timed(time_sp=time * 1000, speed_sp=left)
-            self.__motor_right.run_timed(time_sp=time * 1000, speed_sp=right)
+            if left is not None:
+                self.__motor_left.run_timed(time_sp=time * 1000, speed_sp=left)
+            if right is not None:
+                self.__motor_right.run_timed(time_sp=time * 1000, speed_sp=right)
+
             # time given: blocking by default
             # => block when blocking=None (default) or blocking=True
             if blocking is None or blocking:
                 self.wait()
         else:
             # no time is set => run indefinitely
-            self.__motor_left.run_forever(speed_sp=left)
-            self.__motor_right.run_forever(speed_sp=right)
+            if left is not None:
+                self.__motor_left.run_forever(speed_sp=left)
+            if right is not None:
+                self.__motor_right.run_forever(speed_sp=right)
             # no time given: non-blocking by default
             # => only block when blocking=True is given
+            self.__planned_movement = None
             if blocking:
                 self.wait()
 
     def change_speed(self, left=0, right=0):
-        self.__add_log()
-        self.__motor_left.run_forever(speed_sp=self.speed_left + left)
-        self.__motor_right.run_forever(speed_sp=self.speed_right + right)
+        self.move(left=self.speed_left + left)
+        self.move(right=self.speed_right + right)
+
+    def __set_position(self, delta_x=0, delta_y=0, delta_angle=0, delta_distance=0):
+        # create a fake log that is never called
+        fake_log = {
+            'delta_position_left': randint(1, 99999999),
+            'delta_position_right': randint(1, 99999999),
+        }
+        fake_deltas = {
+            'delta_x': delta_x,
+            'delta_y': delta_y,
+            'delta_angle': delta_angle,
+            'delta_distance': delta_distance,
+        }
+
+        # add fake log
+        self.__movement_logs.append(fake_log)
+
+        # set specific deltas in cache
+        key = self.__movement_logs.index(fake_log)
+        self.__pos_cache[key] = fake_deltas
 
     @property
     def speed_left(self):
@@ -76,7 +273,7 @@ class Odometrium:
 
     @speed_left.setter
     def speed_left(self, new_speed):
-        self.change_speed(left=new_speed)
+        self.move(left=new_speed)
 
     @property
     def speed_right(self):
@@ -84,7 +281,7 @@ class Odometrium:
 
     @speed_right.setter
     def speed_right(self, new_speed):
-        self.change_speed(right=new_speed)
+        self.move(right=new_speed)
 
     def __get_log_str(self, log):
         log_line = ''
@@ -93,9 +290,26 @@ class Odometrium:
         log_line += 'Time:  ' + str(log['time'])
         return log_line
 
+    def print_movement_logs(self):
+        if self.__debug:
+            print('\tleft\tright\tdeltax\tdeltay\tdeltaphi')
+            cnt = 0
+            current_angle = 0
+            for single_log_dict in self.__movement_logs:
+                cnt += 1
+                deltas = self.__get_deltas(single_log_dict, current_angle)
+                current_angle += deltas['delta_angle']
+                print('#' + str(cnt) + '\t' +
+                      str(round(single_log_dict['delta_position_left'])) + '\t' +
+                      str(round(single_log_dict['delta_position_right'])) + '\t' +
+                      str(round(deltas['delta_x'], 2)) + '\t' +
+                      str(round(deltas['delta_y'], 2)) + '\t' +
+                      str(round((deltas['delta_angle'] / pi) * 180))
+                      )
+
     def __exit__(self):
         self.stop()
 
     def __del__(self):
-        for single_log in self.__movement_logs:
-            print(self.__get_log_str(single_log))
+        self.__print_current_pos()
+        self.print_movement_logs()
