@@ -249,8 +249,8 @@ test_cases.append(
         'distance_right': 5,
         'previous_angle': 1.5 * pi,
         'expected': {
-            'x': 0,
-            'y': -5,
+            'x': -5,
+            'y': 0,
             'angle': 0,
             'distance': 5,
         }
@@ -271,6 +271,14 @@ test_cases.append(
     }
 )
 
+# get longest msg
+longest_msg_len = None
+for single_test_case in test_cases:
+    if longest_msg_len is None:
+        longest_msg_len = len(single_test_case['comment'])
+    if len(single_test_case['comment']) > longest_msg_len:
+        longest_msg_len = len(single_test_case['comment'])
+
 # execute test cases
 cnt = 0
 for single_test_case in test_cases:
@@ -281,29 +289,43 @@ for single_test_case in test_cases:
         single_test_case['previous_angle'],
         wheel_distance=12
     )
-    print('test case #' + str(cnt), '"' + single_test_case['comment'] + '"')
+    success_x = round(single_test_case['expected']['x']) == round(delta_dict['delta_x'])
+    success_y = round(single_test_case['expected']['y']) == round(delta_dict['delta_y'])
+    success_angle = round(single_test_case['expected']['angle'] % (pi * 2), 2) == round(delta_dict['delta_angle'] % (pi * 2), 2)
+    success_distance = round(single_test_case['expected']['distance']) == round(delta_dict['delta_distance'])
+    success_all = success_x and success_y and success_angle and success_distance
+
+    if success_all:
+        success_msg = 'success'
+    else:
+        success_msg = 'failure'
+
+    spaces = ' ' * (longest_msg_len - len(single_test_case['comment']))
+
+    print('[' + str(cnt).zfill(2) + '/' + str(len(test_cases)) + '] "' + single_test_case['comment'] + '":' + spaces + ' ' + success_msg)
     # test for return cases
-    if round(single_test_case['expected']['x']) == round(delta_dict['delta_x']):
-        print('  delta x:        success')
-    else:
-        print('  delta x:        failure')
-        print('    expected: ' + str(single_test_case['expected']['x']))
-        print('    returned: ' + str(delta_dict['delta_x']))
-    if round(single_test_case['expected']['y']) == round(delta_dict['delta_y']):
-        print('  delta Y:        success')
-    else:
-        print('  delta Y:        failure')
-        print('    expected: ' + str(single_test_case['expected']['y']))
-        print('    returned: ' + str(delta_dict['delta_y']))
-    if round(single_test_case['expected']['angle'] % (pi * 2), 2) == round(delta_dict['delta_angle'] % (pi * 2), 2):
-        print('  delta angle:    success')
-    else:
-        print('  delta angle:    failure')
-        print('    expected: ' + str(single_test_case['expected']['angle']))
-        print('    returned: ' + str(delta_dict['delta_angle']))
-    if round(single_test_case['expected']['distance']) == round(delta_dict['delta_distance']):
-        print('  delta distance: success')
-    else:
-        print('  delta distance: failure')
-        print('    expected: ' + str(single_test_case['expected']['distance']))
-        print('    returned: ' + str(delta_dict['delta_distance']))
+    if not success_all:
+        if success_x:
+            print('  delta x:        success')
+        else:
+            print('  delta x:        failure')
+            print('    expected: ' + str(single_test_case['expected']['x']))
+            print('    returned: ' + str(delta_dict['delta_x']))
+        if success_y:
+            print('  delta Y:        success')
+        else:
+            print('  delta Y:        failure')
+            print('    expected: ' + str(single_test_case['expected']['y']))
+            print('    returned: ' + str(delta_dict['delta_y']))
+        if success_angle:
+            print('  delta angle:    success')
+        else:
+            print('  delta angle:    failure')
+            print('    expected: ' + str(single_test_case['expected']['angle']))
+            print('    returned: ' + str(delta_dict['delta_angle']))
+        if success_distance:
+            print('  delta distance: success')
+        else:
+            print('  delta distance: failure')
+            print('    expected: ' + str(single_test_case['expected']['distance']))
+            print('    returned: ' + str(delta_dict['delta_distance']))

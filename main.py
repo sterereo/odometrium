@@ -1,9 +1,8 @@
 import ev3dev.ev3 as ev3
 from math import pi, sin, cos, sqrt
-from random import randint
 
 
-def get_position_delta(distance_left, distance_right, previous_angle, wheel_distance):
+def get_position_delta(distance_left, distance_right, previous_angle, wheel_distance, curve_adjustment=1):
     # takes the distance driven by the left and right wheel (and their distance)
     # and a starting angle, calculates new position and orientation
 
@@ -14,10 +13,24 @@ def get_position_delta(distance_left, distance_right, previous_angle, wheel_dist
         # straight movement
         delta_angle = 0
         delta_distance = abs(distance_left)
-        delta_x = distance_left * cos(previous_angle)
-        delta_y = distance_left * sin(previous_angle)
+        delta_x = distance_left * sin(previous_angle)
+        delta_y = distance_left * cos(previous_angle)
     else:
         # curve movement
+
+        # curve distance adjustments. look at readme
+        try:
+            relation = distance_left / distance_right
+        except ZeroDivisionError:
+            relation = 0
+
+        if relation > 0.5 and relation < 2:
+            factor = 1
+        else:
+            factor = curve_adjustment
+
+        distance_left *= factor
+        distance_right *= factor
 
         distance_difference = distance_left - distance_right
         radius_left = (distance_left * wheel_distance) / distance_difference
@@ -48,7 +61,7 @@ def get_position_delta(distance_left, distance_right, previous_angle, wheel_dist
 
 
 class Odometrium:
-    def __init__(self, left=None, right=None, wheel_diameter=5.5, wheel_distance=12, count_per_rot_left=None, count_per_rot_right=None, debug=False):
+    def __init__(self, left=None, right=None, wheel_diameter=5.5, wheel_distance=12, count_per_rot_left=None, count_per_rot_right=None, debug=False, curve_adjustment=0.873):
         allowed_ports = ['A', 'B', 'C', 'D']
         if left not in allowed_ports or right not in allowed_ports:
             if left not in allowed_ports:
@@ -63,6 +76,8 @@ class Odometrium:
         self.__wheel_distance = wheel_distance
 
         self.__debug = debug
+
+        self.__curve_adjustment = curve_adjustment
 
         # init motor wheel
         self.__motor_left = ev3.LargeMotor('out' + left)
@@ -84,7 +99,12 @@ class Odometrium:
         self.stop()
 
         # init position cache
-        self.__pos_cache = {}
+        self.__pos_cache = {
+            'x': 0,
+            'y': 0,
+            'angle': 0,
+            'distance': 0,
+        }
 
     def __save_current_pos(self):
         self.__last_pos = {
@@ -122,7 +142,8 @@ class Odometrium:
             distance_left=distance_left,
             distance_right=distance_right,
             previous_angle=previous_angle,
-            wheel_distance=wheel_distance
+            wheel_distance=wheel_distance,
+            curve_adjustment=self.__curve_adjustment
         )
 
     def __print_current_pos(self):
@@ -134,23 +155,16 @@ class Odometrium:
 
     def __current_pos(self):
         self.__add_log()
-        current_x = 0
-        current_y = 0
-        current_angle = 0
-        current_distance = 0
+        current_x = self.__pos_cache['x']
+        current_y = self.__pos_cache['y']
+        current_angle = self.__pos_cache['angle']
+        current_distance = self.__pos_cache['distance']
 
-        for single_log_dict in self.__movement_logs:
+        while len(self.__movement_logs) > 0:
+            single_log_dict = self.__movement_logs.pop(0)
 
-            key = self.__movement_logs.index(single_log_dict)
-            # is position already cached?
-            if key in self.__pos_cache:
-                # load from cache
-                deltas = self.__pos_cache[key]
-            else:
-                # calculate position
-                deltas = self.__get_deltas(single_log_dict, current_angle)
-                # put to cache
-                self.__pos_cache[key] = deltas
+            # calculate position
+            deltas = self.__get_deltas(single_log_dict, current_angle)
 
             current_x += deltas['delta_x']
             current_y += deltas['delta_y']
@@ -158,14 +172,14 @@ class Odometrium:
             current_angle = current_angle % (2 * pi)
             current_distance += deltas['delta_distance']
 
-        return_dict = {
+        self.__pos_cache = {
             'x': current_x,
             'y': current_y,
-            'angle': current_angle,
+            'angle': current_angle % (2 * pi),
             'distance': current_distance,
         }
 
-        return return_dict
+        return self.__pos_cache
 
     def get_current_pos(self):
         current_pos = self.__current_pos()
@@ -239,7 +253,6 @@ class Odometrium:
                 self.__motor_right.run_forever(speed_sp=right)
             # no time given: non-blocking by default
             # => only block when blocking=True is given
-            self.__planned_movement = None
             if blocking:
                 self.wait()
 
@@ -248,24 +261,14 @@ class Odometrium:
         self.move(right=self.speed_right + right)
 
     def __set_position(self, delta_x=0, delta_y=0, delta_angle=0, delta_distance=0):
-        # create a fake log that is never called
-        fake_log = {
-            'delta_position_left': randint(1, 99999999),
-            'delta_position_right': randint(1, 99999999),
+        # clear logs
+        self.get_current_pos()
+        self.__pos_cache = {
+            'x': self.__pos_cache['x'] + delta_x,
+            'y': self.__pos_cache['y'] + delta_y,
+            'angle': self.__pos_cache['angle'] + delta_angle,
+            'distance': self.__pos_cache['distance'] + delta_distance,
         }
-        fake_deltas = {
-            'delta_x': delta_x,
-            'delta_y': delta_y,
-            'delta_angle': delta_angle,
-            'delta_distance': delta_distance,
-        }
-
-        # add fake log
-        self.__movement_logs.append(fake_log)
-
-        # set specific deltas in cache
-        key = self.__movement_logs.index(fake_log)
-        self.__pos_cache[key] = fake_deltas
 
     @property
     def speed_left(self):
