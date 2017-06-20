@@ -154,7 +154,7 @@ motor speed | tacho counts per second (motor-specific)
 
 Some sample segments:
 
-Delta Ticks Left | Delta Ticks Left | Comment
+Delta Ticks Left | Delta Ticks Right | Comment
 --- | --- | ---
 360 | 360 | Straight movement forward
 -180 | -180 | Reverse backwards for half the distance
